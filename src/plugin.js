@@ -7,7 +7,7 @@ var jslintFactory = function( _, anvil ) {
 	return anvil.plugin({
 		name: "anvil.jslint",
 		activity: "pre-process",
-		all: true, //false, // Change back when this is fixed
+		all: false,
 		inclusive: false,
 		exclusive: false,
 		fileList: [],
@@ -16,20 +16,17 @@ var jslintFactory = function( _, anvil ) {
 		],
 
 		configure: function( config, command, done ) {
-			config = config.jslint;
+			anvil.log.event( JSON.stringify( arguments ) );
 
-			// How do I get access to config? I think this is a bug
-			anvil.log.event( "config ==== undefined: " + ( config === undefined ) );
-
-			if ( config ) {
-				if ( config.all ) {
+			if ( this.config ) {
+				if ( this.config.all ) {
 					this.all = true;
-				} else if ( config.include ) {
+				} else if ( this.config.include ) {
 					this.inclusive = true;
-					this.fileList = config.include;
-				} else if ( config.exclude ) {
+					this.fileList = this.config.include;
+				} else if ( this.config.exclude ) {
 					this.exclusive = true;
-					this.fileList = config.exclude;
+					this.fileList = this.config.exclude;
 				}
 			} else if ( command.jslint ) {
 				this.all = true;
