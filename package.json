@@ -1,0 +1,27 @@
+{
+	"name": "anvil.jslint",
+	"author": "Elijah Manor <elijah.manor@gmail.com> (http://elijahmanor.com)",
+	"description": "JSLint plugin for anvil.js",
+	"version": "0.0.1",
+	"contributors": [],
+	"repository": {
+		"type": "git",
+		"url": "git://github.com/elijahmanor/anvil.jslint.git"
+	},
+	"engines": {
+		"node": "~0.8.3"
+	},
+	"main": "./lib/plugin.js",
+	"dependencies": {
+		"jslint": "0.1.9",
+		"underscore.string": "2.3.0",
+		"expect.js": "0.1.2"
+	},
+	"devDependencies": {
+		"underscore": ">=1.0.0",
+		"expect.js": "0.1.2",
+		"jslint": "0.1.9"
+	},
+	"optionalDependencies": {},
+	"keywords": [ "anvil", "jslint" ]
+}

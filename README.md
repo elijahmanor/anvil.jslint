@@ -1,4 +1,4 @@
-anvil.jslint
+anvil.jshint
 ============
 
-JSLint plugin for anvil.js
+JSHint plugin for anvil
