@@ -2,7 +2,7 @@
 	"name": "anvil.jslint",
 	"author": "Elijah Manor <elijah.manor@gmail.com> (http://elijahmanor.com)",
 	"description": "JSLint plugin for anvil.js",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"contributors": [],
 	"repository": {
 		"type": "git",

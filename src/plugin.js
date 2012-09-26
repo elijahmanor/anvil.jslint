@@ -10,6 +10,8 @@ var jslintFactory = function( _, anvil ) {
 		all: false,
 		inclusive: false,
 		exclusive: false,
+		breakBuild: true,
+		ignore: null,
 		fileList: [],
 		commander: [
 			[ "-lint, --jslint", "JSLint all JavaScript files" ]
@@ -17,7 +19,7 @@ var jslintFactory = function( _, anvil ) {
 		settings: {},
 
 		configure: function( config, command, done ) {
-			if ( this.config ) {
+			if ( !_.isEmpty( this.config ) ) {
 				if ( this.config.all ) {
 					this.all = true;
 				} else if ( this.config.include && this.config.include.length ) {
@@ -29,6 +31,9 @@ var jslintFactory = function( _, anvil ) {
 				}
 
 				this.settings = this.getSettings( this.config );
+				this.breakBuild = this.config.breakBuild === false ?
+					this.config.breakBuild : this.breakBuild;
+				this.ignore = this.config.ignore || [];
 			} else if ( command.jslint ) {
 				this.all = true;
 			}
@@ -49,7 +54,11 @@ var jslintFactory = function( _, anvil ) {
 		},
 
 		run: function( done ) {
-			var jsFiles = [], options = {}, that = this, transforms;
+			var jsFiles = [],
+			options = {},
+			that = this,
+			totalErrors = 0,
+			transforms;
 
 			if ( this.inclusive ) {
 				jsFiles = _.filter( anvil.project.files, this.anyFile( this.fileList ) );
@@ -66,10 +75,18 @@ var jslintFactory = function( _, anvil ) {
 				anvil.log.step( "Linting " + jsFiles.length + " files" );
 				transforms = _.map( jsFiles, function( file ) {
 					return function( done ) {
-						that.lint( file, done );
+						that.lint( file, function( numberOfErrors ) {
+							totalErrors += numberOfErrors;
+							done();
+						});
 					};
 				});
-				anvil.scheduler.pipeline( undefined, transforms, done );
+				anvil.scheduler.pipeline( undefined, transforms, function() {
+					if ( that.breakBuild === true &&
+						_.isNumber( totalErrors ) && totalErrors > 0 ) {
+						anvil.events.raise( "build.stop", "project has " + totalErrors + " errors(s)!" );
+					}
+				});
 			} else {
 				done();
 			}
@@ -90,7 +107,9 @@ var jslintFactory = function( _, anvil ) {
 			anvil.log.event( "Linting '"+ file.fullPath + "'" );
 			anvil.fs.read( [ file.fullPath ], function( content, err ) {
 				if ( !err ) {
-					that.lintContent( content, done );
+					that.lintContent( content, function( numberOfErrors ) {
+						done( numberOfErrors );
+					});
 				} else {
 					anvil.log.error( "Error reading " + file.fullPath + " for linting: \n" + err.stack  );
 					done();
@@ -99,22 +118,27 @@ var jslintFactory = function( _, anvil ) {
 		},
 
 		lintContent: function( content, done ) {
-			var result = jslint( content, this.settings.options || {} );
+			var result = jslint( content, this.settings.options || {} ),
+				validErrors = [];
 
 			if ( result ) {
 				anvil.log.event( "No issues Found." );
 			} else {
-				_.each( this.processErrors( jslint.errors ), function( error ) {
+				validErrors = this.processErrors( jslint.errors, this.ignore );
+				_.each( validErrors, function( error ) {
 					anvil.log.error( error );
 				});
-				anvil.log.event( jslint.errors.length + " issue(s) Found." );
+				anvil.log.event( validErrors.length + " issue(s) found." );
+				if ( this.ignore.length ) {
+					anvil.log.event( jslint.errors.length - validErrors.length + " issue(s) ignored." );
+				}
 			}
 
-			done();
+			done( validErrors.length );
 		},
 
-		processErrors: function( errors ) {
-			var result = [], padding = {};
+		processErrors: function( errors, ignore ) {
+			var result = [], padding = {}, that = this;
 
 			padding = {
 				line: _.reduce( errors, function( memo, error ) {
@@ -134,8 +158,10 @@ var jslintFactory = function( _, anvil ) {
 			_.each( errors, function( error ) {
 				if ( error ) {
 					if ( error.evidence ) {
-						result.push( "[" + _.lpad( error.line, padding.line, "0" ) + ":" + _.lpad( error.character, padding.character, "0" ) + "] " +
-							error.evidence.replace( /^\s*/g, "" ) + " -> " + error.reason );
+						if ( !that.isIgnorable( error, ignore ) ) {
+							result.push( "[" + _.lpad( error.line, padding.line, "0" ) + ":" + _.lpad( error.character, padding.character, "0" ) + "] " +
+								error.evidence.replace( /^\s*/g, "" ) + " -> " + error.reason );
+						}
 					} else {
 						result.push( "Too Many Errors!" );
 					}
@@ -143,6 +169,53 @@ var jslintFactory = function( _, anvil ) {
 			});
 
 			return result;
+		},
+
+
+		/*
+		 * The following option ignores reason for line 81 and character 26
+		 * { "line": 81, "character": 26, "reason": "'someVariable' is already defined." }
+		 *
+		 * The following option ignores any error on line 81 and character 12
+		 * { "line": 81, "character": 12 }
+		 *
+		 * The following option ignores reason anywhere on line 81
+		 * { "line": 81, "reason": "'someVariable' is already defined." }
+		 *
+		 * The following option ignores any errors on line 81
+		 * { "line": 81 }
+		 *
+		 * The following option ignores any errors matching reason anywhere in the file
+		 * { "reason": "literal notation" }
+		 */
+		isIgnorable: function( error, ignoreList ) {
+			var ignorable = false;
+
+			ignorable = _.any( ignoreList, function( ignore ) {
+				return error.line === ignore.line && error.character === ignore.character && error.reason.indexOf( ignore.reason ) > -1;
+			});
+			if ( !ignorable ) {
+				ignorable = _.any( ignoreList, function( ignore ) {
+					return error.line === ignore.line && error.character === ignore.character && !ignore.reason;
+				});
+			}
+			if ( !ignorable ) {
+				ignorable = _.any( ignoreList, function( ignore ) {
+					return error.line === ignore.line && !ignore.character && error.reason.indexOf( ignore.reason ) > -1;
+				});
+			}
+			if ( !ignorable ) {
+				ignorable = _.any( ignoreList, function( ignore ) {
+					return error.line === ignore.line && !ignore.character && !ignore.reason;
+				});
+			}
+			if ( !ignorable ) {
+				ignorable = _.any( ignoreList, function( ignore ) {
+					return !ignore.line && !ignore.character && error.reason.indexOf( ignore.reason ) > -1;
+				});
+			}
+
+			return ignorable;
 		}
 	});
 };
